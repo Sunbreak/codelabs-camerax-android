@@ -4,17 +4,19 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Matrix
 import android.os.Bundle
+import android.util.Log
+import android.util.Rational
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraX
-import androidx.camera.core.Preview
-import androidx.camera.core.PreviewConfig
+import androidx.camera.core.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.io.File
 
 // This is an arbitrary number we are using to keep tab of the permission
 // request. Where an app has multiple context for requesting permission,
@@ -54,9 +56,47 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewFinder: TextureView
 
     private fun startCamera() {
+        // Create configuration object for the image capture use case
+        val imageCaptureConfig = ImageCaptureConfig.Builder()
+            .apply {
+                setTargetAspectRatio(Rational(1, 1))
+                setTargetResolution(Size(640, 640))
+                // We don't set a resolution for image capture; instead, we
+                // select a capture mode which will infer the appropriate
+                // resolution based on aspect ration and requested mode
+                setCaptureMode(ImageCapture.CaptureMode.MIN_LATENCY)
+            }.build()
+
+        // Build the image capture use case and attach button click listener
+        val imageCapture = ImageCapture(imageCaptureConfig)
+        findViewById<ImageButton>(R.id.capture_button).setOnClickListener {
+            val file = File(
+                externalMediaDirs.first(),
+                "${System.currentTimeMillis()}.jpg"
+            )
+            imageCapture.takePicture(file,
+                object : ImageCapture.OnImageSavedListener {
+                    override fun onError(
+                        error: ImageCapture.ImageCaptureError,
+                        message: String, exc: Throwable?
+                    ) {
+                        val msg = "Photo capture failed: $message"
+                        Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                        Log.e("CameraXApp", msg)
+                        exc?.printStackTrace()
+                    }
+
+                    override fun onImageSaved(file: File) {
+                        val msg = "Photo capture succeeded: ${file.absolutePath}"
+                        Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                        Log.d("CameraXApp", msg)
+                    }
+                })
+        }
 
         // Create configuration object for the viewfinder use case
         val previewConfig = PreviewConfig.Builder().apply {
+            setTargetAspectRatio(Rational(1, 1))
             setTargetResolution(Size(640, 640))
         }.build()
 
@@ -79,7 +119,7 @@ class MainActivity : AppCompatActivity() {
         // If Android Studio complains about "this" being not a LifecycleOwner
         // try rebuilding the project or updating the appcompat dependency to
         // version 1.1.0 or higher.
-        CameraX.bindToLifecycle(this, preview)
+        CameraX.bindToLifecycle(this, preview, imageCapture)
     }
 
     private fun updateTransform() {
