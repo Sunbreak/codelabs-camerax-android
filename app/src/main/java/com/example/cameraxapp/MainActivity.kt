@@ -2,6 +2,7 @@ package com.example.cameraxapp
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.os.Bundle
 import android.os.Handler
@@ -18,6 +19,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.zxing.*
+import com.google.zxing.common.HybridBinarizer
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
@@ -153,7 +156,7 @@ class MainActivity : AppCompatActivity() {
 
         // Build the image analysis use case and instantiate our analyzer
         val analyzerUseCase = ImageAnalysis(analyzerConfig).apply {
-            analyzer = LuminosityAnalyzer()
+            analyzer = QRCodeAnalyzer()
         }
         return analyzerUseCase
     }
@@ -213,17 +216,6 @@ class MainActivity : AppCompatActivity() {
     private class LuminosityAnalyzer : ImageAnalysis.Analyzer {
         private var lastAnalyzedTimestamp = 0L
 
-        /**
-         * Helper extension function used to extract a byte array from an
-         * image plane buffer
-         */
-        private fun ByteBuffer.toByteArray(): ByteArray {
-            rewind()    // Rewind the buffer to zero
-            val data = ByteArray(remaining())
-            get(data)   // Copy the buffer into a byte array
-            return data // Return the byte array
-        }
-
         override fun analyze(image: ImageProxy, rotationDegrees: Int) {
             val currentTimestamp = System.currentTimeMillis()
             // Calculate the average luma no more often than every second
@@ -246,4 +238,52 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private class QRCodeAnalyzer : ImageAnalysis.Analyzer {
+        private val reader = MultiFormatReader().apply {
+            setHints(
+                mapOf(
+                    DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE)
+                )
+            )
+        }
+
+        override fun analyze(image: ImageProxy, rotationDegrees: Int) {
+            if (image.format != ImageFormat.YUV_420_888) {
+                Log.e("CameraXApp", "Unsupported format: ${image.format}")
+                return
+            }
+
+            val bytes = image.planes[0].buffer.toByteArray()
+            val luminanceSource = PlanarYUVLuminanceSource(
+                bytes,
+                image.width,
+                image.height,
+                0,
+                0,
+                image.width,
+                image.height,
+                false
+            )
+            val binaryBitmap = BinaryBitmap(HybridBinarizer(luminanceSource))
+
+            try {
+                val result = reader.decode(binaryBitmap)
+                Log.d("CameraXApp", "QRCode analyze: $result")
+            } catch (e: Exception) {
+                Log.d("CameraXApp", "QRCode error: $e")
+            }
+        }
+    }
+}
+
+/**
+ * Helper extension function used to extract a byte array from an
+ * image plane buffer
+ */
+private fun ByteBuffer.toByteArray(): ByteArray {
+    rewind()    // Rewind the buffer to zero
+    val data = ByteArray(remaining())
+    get(data)   // Copy the buffer into a byte array
+    return data // Return the byte array
 }
